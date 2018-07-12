@@ -1,8 +1,5 @@
 import abc
-import logging
-import numpy
-
-logger = logging.getLogger(__name__)
+from .image_utils import *
 
 
 class TargetRegion(metaclass=abc.ABCMeta):
@@ -13,7 +10,7 @@ class TargetRegion(metaclass=abc.ABCMeta):
     @abc.abstractmethod
     def is_target(self, x, y):
         """
-        To overwrite
+        To override
         Determine (x,y) whether or not it is in the target region.
         :param x: x
         :param y: y
@@ -27,6 +24,13 @@ class SimpleTargetRegion(TargetRegion):
     Rectangle target region
     """
     def __init__(self, x_min, x_max, y_min, y_max):
+        """
+        Constructor of SimpleTargetRegion
+        :param x_min: minimum coordinate of X axis
+        :param x_max: maximum coordinate of X axis
+        :param y_min: minimum coordinate of Y axis
+        :param y_max: maximum coordinate of Y axis
+        """
         if not _is_int(x_min, x_max, y_min, y_max):
             raise TypeError("extends must be int")
         self._x_min = x_min
@@ -46,6 +50,15 @@ class SlcOffTargetRegion(TargetRegion):
     N0_TARGET_VALUE = 1
 
     def __init__(self, height, width, a, b0, interval_b, interval_y):
+        """
+        Constructor of SlcOffTargetRegion
+        :param height: height of image
+        :param width: width of image
+        :param a: slope of a strip
+        :param b0: intercept of the starting strip
+        :param interval_b: interval of strip
+        :param interval_y: interval between strips
+        """
         if not _is_int(height, width):
             raise TypeError("height or width must be int")
         if not _is_float(a, b0, interval_b, interval_y):
@@ -72,6 +85,35 @@ class SlcOffTargetRegion(TargetRegion):
             raise ValueError("y is out of range")
         result = self.mask[y][x]
         return result == self.TARGET_VALUE
+
+
+class SimpleImage(object):
+    """
+    single band image
+    """
+    def __init__(self, pil_img):
+        if not isinstance(pil_img, Image.Image):
+            raise TypeError("pil_img must be PIL.Image.Image")
+        self._height = pil_img.height
+        self._width = pil_img.width
+        self._values = image_to_array(pil_img)
+
+    @property
+    def height(self):
+        return self._height
+
+    @property
+    def width(self):
+        return self._width
+
+    def get_value(self, x, y):
+        return self._values[x][y]
+
+    def set_value(self, x, y, v):
+        self._values[x][y] = v
+
+    def get_image_array(self):
+        return self._values
 
 
 def _is_int(*args):
