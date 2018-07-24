@@ -1,53 +1,49 @@
-from PIL import Image
-import matplotlib.pyplot as plt
-import numpy as np
-from core import processor
-from core import model
+from cloud_removal.core import *
 
 IMAGE_PATH = "D:\\test\\new\\"
 
 
-def image_to_array(image):
-    return np.array(image)
+def simulate_missing(img_name, target_region):
+    """
+    simulate data missing in an image
+    :param img_name: image name in IMAGE_PATH
+    :param target_region: model.TargetRegion
+    :return: a new image formatted by Image.Image
+    """
+    image_full_path = IMAGE_PATH + img_name
+    p = processor.SimulatedProcessor(image_full_path, target_region)
+    return p.process()
 
 
-def array_to_image(array):
-    return Image.fromarray(array).convert("L")
+def process_by_multi_temporal(primary_img_name, fill_img_name, target_region, p=processor.WlrProcessor):
+    """
+    reconstruct the missing date of primary image with fill image in target region by p
+    :param primary_img_name: image name in IMAGE_PATH
+    :param fill_img_name: image name in IMAGE_PATH
+    :param target_region: model.TargetRegion
+    :param p: class of MultiTemporalProcessor
+    :return: a new Image.Image
+    """
+    p_path = IMAGE_PATH + primary_img_name
+    f_path = IMAGE_PATH + fill_img_name
+    if issubclass(processor.MultiTemporalProcessor, p):
+        raise TypeError("p must be MultiTemporalProcessor")
+    instance_p = p(p_path, f_path, target_region)
+    return instance_p.process()
 
 
-def open_image(name):
-    file_path = IMAGE_PATH+name
-    return Image.open(file_path).convert("RGB")
+def result_statistics(original_img, reconstructed_img, target_region):
+    """
+    compute the statistics result(r, are, uiqi, msa)
+    :param original_img: the image with missing data
+    :param reconstructed_img: the reconstructed image
+    :param target_region:
+    :return: StatisticsResult
+    """
+    p = statistics.StatisticProcessor(original_img, reconstructed_img, target_region)
+    result = p.process()
+    return result
 
 
 def show_image(image):
-    plt.figure("main")
-    plt.axis("off")
-    plt.imshow(image)
-    plt.show()
-
-
-if __name__ == "__main__":
-    target_region = model.SimpleTargetRegion(150, 350, 100, 300)
-    p1 = processor.SimulatedProcessor("D:\\test\\new\\20170315.jpg", target_region)
-    img_new = p1.process()
-    show_image(img_new)
-    # image1 = open_image("20170315.jpg")
-    # image2 = open_image("20170126.jpg")
-    # r, g, b = image1.split()
-    # array1 = image_to_array(r)
-    # array2 = image_to_array(image2)
-    # print(image1.width)
-    # print(type(image1))
-    # print(type(array1))
-    # print(array1.ndim)
-    # print(array1.shape)
-    # print(r.size)
-    # count = 0
-    # for y in range(100, 300):
-    #     for x in range(150, 350):
-    #         array1[x][y] = array2[x][y]
-    #         count = count + 1
-    # print(count)
-    # image_new = Image.fromarray(array1)
-    # show_image(image_new)
+    image_utils.show_image(image)

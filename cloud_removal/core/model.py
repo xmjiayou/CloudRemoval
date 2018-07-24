@@ -1,5 +1,6 @@
 import abc
 from .image_utils import *
+from collections import namedtuple
 
 
 class TargetRegion(metaclass=abc.ABCMeta):
@@ -74,17 +75,13 @@ class SlcOffTargetRegion(TargetRegion):
                     y1 = a * x + b
                     y2 = a * x + b + interval_b
                     if y1 < y < y2:
-                        self.mask[y][x] = self.TARGET_VALUE
+                        self.mask[x][y] = self.TARGET_VALUE
 
     def is_target(self, x, y):
-        if not _is_int(x, y):
-            raise TypeError("x,y must be int")
-        if x < 0 or x > self.width:
-            raise ValueError("x is out of range")
-        if y < 0 or y > self.height:
-            raise ValueError("y is out of range")
-        result = self.mask[y][x]
-        return result == self.TARGET_VALUE
+        return self.mask[x][y] == self.TARGET_VALUE
+
+
+SimplePoint = namedtuple("SimplePoint", ["x", "y"])
 
 
 class SimpleImage(object):
@@ -114,6 +111,94 @@ class SimpleImage(object):
 
     def get_image_array(self):
         return self._values
+
+
+class SimpleWindow(object):
+    """
+    Moving window
+    """
+    def __init__(self, x, y, size, img_size):
+        if not size % 2 == 1:
+            raise ValueError("window size must be odd")
+        self._x = x
+        self._y = y
+
+        half_size = (size-1)/2
+        max_x = img_size[0]-1
+        max_y = img_size[1]-1
+
+        # window can not over the extend of image
+        if x-half_size < 0:
+            self._x0 = 0
+            self._width = x+half_size
+        elif x+half_size > max_x:
+            self._x0 = x-half_size
+            self._width = max_x-self._x0+1
+        else:
+            self._x0 = x - half_size
+            self._width = size
+        if y-half_size < 0:
+            self._y0 = 0
+            self._height = y+half_size
+        elif y+half_size > max_y:
+            self._y0 = y-half_size
+            self._height = max_y-self._y0+1
+        else:
+            self._y0 = y - half_size
+            self._height = size
+
+    @property
+    def x(self):
+        return int(self._x)
+
+    @property
+    def y(self):
+        return int(self._y)
+
+    @property
+    def x0(self):
+        return int(self._x0)
+
+    @property
+    def y0(self):
+        return int(self._y0)
+
+    @property
+    def width(self):
+        return int(self._width)
+
+    @property
+    def height(self):
+        return int(self._height)
+
+
+# SimilarPixelPair = namedtuple("SimilarPixelPair", ["x", "y", "value_p", "value_f"])
+class SimilarPixelPair(object):
+    """
+    similar pixel pair
+    to record the value of primary and fill image in pixel(x,y)
+    """
+    def __init__(self, x, y, p, f):
+        self._x = x
+        self._y = y
+        self._f = f
+        self._p = p
+
+    @property
+    def x(self):
+        return self._x
+
+    @property
+    def y(self):
+        return self._y
+
+    @property
+    def value_p(self):
+        return self._p
+
+    @property
+    def value_f(self):
+        return self._f
 
 
 def _is_int(*args):
