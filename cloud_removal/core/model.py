@@ -201,6 +201,24 @@ class SimilarPixelPair(object):
         return self._f
 
 
+class PointResult(object):
+    def __init__(self, x, y, result):
+        self._x = x
+        self._y = y
+        self._result = result
+
+    @property
+    def x(self):
+        return self._x
+
+    @property
+    def y(self):
+        return self._y
+
+    def get_result(self, n):
+        return self._result[n]
+
+
 def _is_int(*args):
     for a in args:
         if not isinstance(a, int):

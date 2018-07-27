@@ -1,7 +1,7 @@
-import abc
-from . import model
+from .model import *
 from .image_utils import *
 import progressbar
+from concurrent.futures import ProcessPoolExecutor
 
 
 class SimulatedProcessor(object):
@@ -10,12 +10,12 @@ class SimulatedProcessor(object):
     """
     def __init__(self, img_path, target_region):
         self.img = open_image(img_path)
-        if not isinstance(target_region, model.TargetRegion):
+        if not isinstance(target_region, TargetRegion):
             raise TypeError("target_region must be TargetRegion")
         self.target_region = target_region
 
     def _process(self, image, value):
-        simple_img = model.SimpleImage(image)
+        simple_img = SimpleImage(image)
         for x in range(simple_img.width):
             for y in range(simple_img.height):
                 if self.target_region.is_target(x, y):
@@ -33,51 +33,49 @@ class MultiTemporalProcessor(metaclass=abc.ABCMeta):
     """
     An abstract class
     """
-    def __init__(self, primary_img_path, fill_img_path, target_region, band_num=3):
-        self.primary_img = open_image(primary_img_path)
-        self.fill_img = open_image(fill_img_path)
-        if not isinstance(target_region, model.TargetRegion):
+    def __init__(self, primary_img_path, fill_img_path, target_region):
+        self.primary = [SimpleImage(img) for img in split_image(open_image(primary_img_path))]
+        self.fill = [SimpleImage(img) for img in split_image(open_image(fill_img_path))]
+        if not isinstance(target_region, TargetRegion):
             raise TypeError("target_region must be TargetRegion")
         self.target_region = target_region
-        self.band_num = band_num
+        self.band_num = len(self.primary)
 
     @abc.abstractmethod
-    def _process(self, primary, fill, x, y):
+    def _process(self, point):
         """
         To override
         process the pixel of primary in (x,y)
-        :param primary: SimpleImage
-        :param fill: SimpleImage
-        :param x: x of pixel
-        :param y: y of pixel
+        :param point: point of x,y
         """
         pass
 
     def process(self):
-        img_new = []
-        img_p = split_image(self.primary_img)
-        img_f = split_image(self.fill_img)
         print("Start: MultiTemporalProcessor")
         print("Total band number is %s." % self.band_num)
-        img_width = self.primary_img.width
-        img_height = self.primary_img.height
-        target_points = [model.SimplePoint(x, y)
+        img_width = self.primary[0].width
+        img_height = self.primary[0].height
+        target_points = [SimplePoint(x, y)
                          for x in range(0, img_width)
                          for y in range(0, img_height)
                          if self.target_region.is_target(x, y)]
         pb = progressbar.ProgressBar()
-        pb.start(self.band_num * len(target_points))
+        pb.start(len(target_points))
         pb_c = 0
-        for i in range(0, self.band_num):
-            primary = model.SimpleImage(img_p[i])
-            fill = model.SimpleImage(img_f[i])
-            for point in target_points:
-                self._process(primary, fill, point.x, point.y)
-                pb_c = pb_c + 1
-                pb.update(pb_c)
-            img = array_to_image(primary.get_image_array())
-            img_new.append(img)
+        points_result = set()
+        for point in target_points:
+            points_result.add(self._process(point))
+            pb_c = pb_c + 1
+            pb.update(pb_c)
         pb.finish()
+        # with ProcessPoolExecutor() as executor:
+        #     points_result = list(executor.map(self._process, target_points))
+        for result in points_result:
+            x = result.x
+            y = result.y
+            for i in range(self.band_num):
+                self.primary[i].set_value(x, y, result.get_result(i))
+        img_new = [array_to_image(p.get_image_array()) for p in self.primary]
         return merge_images(img_new)
 
 
@@ -85,21 +83,30 @@ class DrProcessor(MultiTemporalProcessor):
     """
     Direct replacement method.
     """
-    def _process(self, primary, fill, x, y):
-        primary.set_value(x, y, fill.get_value(x, y))
+    def _process(self, point):
+        x = point.x
+        y = point.y
+        result = [self.fill[i].get_value(x, y) for i in range(self.band_num)]
+        return PointResult(x, y, result)
 
 
 class LlhmProcessor(MultiTemporalProcessor):
     """
     Local linear histogram matching method.
     """
-    WINDOW_SIZE = 51
+    WINDOW_SIZE = 21
 
-    def _process(self, primary, fill, x, y):
-        moving_window = model.SimpleWindow(x, y, self.WINDOW_SIZE, (primary.width, primary.height))
-        valid_points = self._search_valid_points(primary, fill, moving_window)
-        result = self._estimate_result(valid_points, fill.get_value(x, y))
-        primary.set_value(x, y, result)
+    def _process(self, point):
+        x = point.x
+        y = point.y
+        result = []
+        for i in range(self.band_num):
+            primary = self.primary[i]
+            fill = self.fill[i]
+            moving_window = SimpleWindow(x, y, self.WINDOW_SIZE, (primary.width, primary.height))
+            valid_points = self._search_valid_points(primary, fill, moving_window)
+            result.append(self._estimate_result(valid_points, fill.get_value(x, y)))
+        return PointResult(x, y, result)
 
     def _search_valid_points(self, primary, fill, window):
         """
@@ -109,20 +116,10 @@ class LlhmProcessor(MultiTemporalProcessor):
         :param window: moving window (SimpleWindow)
         :return: list of SimilarPixelPair
         """
-        # valid_points = []
-        # if not isinstance(window, model.SimpleWindow):
-        #     raise TypeError("window type error")
-        valid_points = [model.SimilarPixelPair(x, y, primary.get_value(x, y), fill.get_value(x, y))
+        valid_points = [SimilarPixelPair(x, y, primary.get_value(x, y), fill.get_value(x, y))
                         for x in range(window.x0, window.x0+window.width)
                         for y in range(window.y0, window.y0+window.height)
                         if not self.target_region.is_target(x, y)]
-        # for xx in range(0, window.width):
-        #     for yy in range(0, window.height):
-        #         x = window.x0 + xx
-        #         y = window.y0 + yy
-        #         if not self.target_region.is_target(x, y):
-        #             similar_pixel_pair = model.SimilarPixelPair(x, y, primary.get_value(x, y), fill.get_value(x, y))
-        #             valid_points.append(similar_pixel_pair)
         return valid_points
 
     def _estimate_result(self, valid_points, fill_value):
@@ -156,12 +153,18 @@ class WlrProcessor(MultiTemporalProcessor):
     MAX_WINDOW_SIZE = 300
     WINDOW_STEP = 10
 
-    def _process(self, primary, fill, x, y):
-        similar_points = self._get_similar_points(primary, fill, x, y)
-        if len(similar_points) == 0:
-            print("can not find similar pixels in （"+x+","+y+")")
-        result = self._estimate_result(fill.get_value(x, y), x, y, similar_points)
-        primary.set_value(x, y, result)
+    def _process(self, point):
+        x = point.x
+        y = point.y
+        result = []
+        for i in range(self.band_num):
+            primary = self.primary[i]
+            fill = self.fill[i]
+            similar_points = self._get_similar_points(primary, fill, x, y)
+            if len(similar_points) == 0:
+                print("can not find similar pixels in （"+x+","+y+")")
+            result.append(self._estimate_result(fill.get_value(x, y), x, y, similar_points))
+        return PointResult(x, y, result)
 
     def _get_similar_points(self, primary, fill, x, y):
         """
@@ -175,7 +178,7 @@ class WlrProcessor(MultiTemporalProcessor):
         similar_points = []
         window_size = self.INIT_WINDOW_SIZE
         while (len(similar_points) < self.UMBER_OF_REFERENCE_VALUE) and (window_size < self.MAX_WINDOW_SIZE):
-            moving_window = model.SimpleWindow(x, y, window_size, (primary.width, primary.height))
+            moving_window = SimpleWindow(x, y, window_size, (primary.width, primary.height))
             similar_points = self._search_window(primary, fill, moving_window)
             window_size = window_size + self.WINDOW_STEP
         return similar_points
@@ -195,7 +198,7 @@ class WlrProcessor(MultiTemporalProcessor):
             for yy in range(window.y0, window.y0+window.height):
                 if abs(fill_target_value-fill.get_value(xx, yy)) <= threshold:
                     if not self.target_region.is_target(xx, yy):
-                        similar_point = model.SimilarPixelPair(xx, yy, primary.get_value(xx, yy), fill.get_value(xx, yy))
+                        similar_point = SimilarPixelPair(xx, yy, primary.get_value(xx, yy), fill.get_value(xx, yy))
                         similar_points.append(similar_point)
         return similar_points
 

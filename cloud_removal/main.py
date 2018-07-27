@@ -1,6 +1,6 @@
 from cloud_removal.core import *
 
-IMAGE_PATH = "D:\\test\\new\\"
+IMAGE_PATH = "D:\\test\\new\\out7\\"
 
 
 def simulate_missing(img_name, target_region):
