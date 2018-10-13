@@ -23,7 +23,6 @@ def _rgb_to_xyz(rgb):
     y = (r * 0.2126 + g * 0.7152 + b * 0.0722) * 100
     z = (r * 0.0193 + g * 0.1192 + b * 0.9505) * 100
     xyz = (x, y, z)
-    print(xyz)
     return xyz
 
 
@@ -42,7 +41,6 @@ def _xyz_to_lab(xyz):
     a = 500 * (_f(x/x_n) - _f(y/y_n))
     b = 200 * (_f(y/y_n) - _f(z/z_n))
     lab = (l_, a, b)
-    print(lab)
     return lab
 
 
